@@ -53,41 +53,47 @@ router.post('/excel', uploadExcel.single('file'), async function (req, res, next
     for (const category of categories) {
         categoriesMap.set(category.name, category._id)
     }
+    //bulkwrite, batch
     let products = await productModel.find({});
     let getTitle = products.map(p => p.title);
     let getSku = products.map(p => p.sku)
-    for (let row = 2; row <= worksheet.rowCount; row++) {
-        let rowErrors = [];
-        const cells = worksheet.getRow(row);
-        let sku = cells.getCell(1).value;
-        let title = cells.getCell(2).value;
-        let category = cells.getCell(3).value;//hop le
-        let price = Number.parseInt(cells.getCell(4).value);
-        let stock = Number.parseInt(cells.getCell(5).value);
-        if (price < 0 || isNaN(price)) {
-            rowErrors.push("price phai so duong")
-        }
-        if (stock < 0 || isNaN(stock)) {
-            rowErrors.push("stock phai so duong")
-        }
-        if (!categoriesMap.has(category)) {
-            rowErrors.push('category khong hop le')
-        }
-        if (getTitle.includes(title)) {
-            rowErrors.push('title da ton tai')
-        }
-        if (getSku.includes(sku)) {
-            rowErrors.push('sku da ton tai')
-        }
-        if (rowErrors.length > 0) {
-            result.push(rowErrors);
-            continue;
-        }
+    let sizeBatch = 50;
+    let writeCount = Math.ceil(worksheet.rowCount / sizeBatch)
+    for (let commitTime = 0; commitTime < writeCount; commitTime++) {
+        let start = sizeBatch * commitTime + 1;
+        let end = Math.min(start + sizeBatch - 1, worksheet.rowCount);
         let session = await mongoose.startSession();
+        let validProduct = []
         session.startTransaction()
-        try {
+        for (let row = start; row <= end; row++) {
+            let rowErrors = [];
+            const cells = worksheet.getRow(row);
+            let sku = cells.getCell(1).value;
+            let title = cells.getCell(2).value;
+            let category = cells.getCell(3).value;//hop le
+            let price = Number.parseInt(cells.getCell(4).value);
+            let stock = Number.parseInt(cells.getCell(5).value);
+            if (price < 0 || isNaN(price)) {
+                rowErrors.push("price phai so duong")
+            }
+            if (stock < 0 || isNaN(stock)) {
+                rowErrors.push("stock phai so duong")
+            }
+            if (!categoriesMap.has(category)) {
+                rowErrors.push('category khong hop le')
+            }
+            if (getTitle.includes(title)) {
+                rowErrors.push('title da ton tai')
+            }
+            if (getSku.includes(sku)) {
+                rowErrors.push('sku da ton tai')
+            }
+            if (rowErrors.length > 0) {
+                result.push(rowErrors);
+                continue;
+            }
             let newObj = new productModel({
-                sku:sku,
+                sku: sku,
                 title: title,
                 slug: slugify(title, {
                     replacement: '-', lower: true, locale: 'vi',
@@ -96,25 +102,37 @@ router.post('/excel', uploadExcel.single('file'), async function (req, res, next
                 description: title,
                 category: categoriesMap.get(category)
             })
-            await newObj.save({ session })
-            let newInventory = new inventoryModel({
-                product: newObj._id,
-                stock: stock
-            })
-            await newInventory.save({ session })
-            await session.commitTransaction();
-            await session.endSession()
-            await newInventory.populate('product')
+            validProduct.push(newObj);
             getSku.push(sku);
             getTitle.push(title)
-            result.push(newInventory);
-        } catch (error) {
-            await session.abortTransaction();
-            await session.endSession()
-            result.push(error.message);
+            result.push(newObj)
         }
-        //khong co loi
+        await productModel.insertMany(validProduct, { session })
+        await session.commitTransaction();
+        await session.endSession()
     }
+    // for (let row = 2; row <= worksheet.rowCount; row++) {
+
+
+
+    //     try {
+
+    //         let newInventory = new inventoryModel({
+    //             product: newObj._id,
+    //             stock: stock
+    //         })
+    //         await newInventory.save({ session })
+
+    //         await newInventory.populate('product')
+
+    //         result.push(newInventory);
+    //     } catch (error) {
+    //         await session.abortTransaction();
+    //         await session.endSession()
+    //         result.push(error.message);
+    //     }
+    //     //khong co loi
+    // }
     res.send(result)
 })
 
