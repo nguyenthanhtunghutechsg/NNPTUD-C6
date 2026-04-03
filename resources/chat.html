@@ -1,29 +1,140 @@
 <!DOCTYPE html>
 <html>
-  <head>
+
+<head>
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
     <title>Socket.IO chat</title>
     <style>
-      body { margin: 0; padding-bottom: 3rem; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body {
+            margin: 0;
+            padding-bottom: 3rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
 
-      #form { background: rgba(0, 0, 0, 0.15); padding: 0.25rem; position: fixed; bottom: 0; left: 0; right: 0; display: flex; height: 3rem; box-sizing: border-box; backdrop-filter: blur(10px); }
-      #input { border: none; padding: 0 1rem; flex-grow: 1; border-radius: 2rem; margin: 0.25rem; }
-      #input:focus { outline: none; }
-      #form > button { background: #333; border: none; padding: 0 1rem; margin: 0.25rem; border-radius: 3px; outline: none; color: #fff; }
+        #form {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 0.25rem;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            height: 3rem;
+            box-sizing: border-box;
+            backdrop-filter: blur(10px);
+        }
 
-      #messages { list-style-type: none; margin: 0; padding: 0; }
-      #messages > li { padding: 0.5rem 1rem; }
-      #messages > li:nth-child(odd) { background: #efefef; }
+        #input {
+            border: none;
+            padding: 0 1rem;
+            flex-grow: 1;
+            border-radius: 2rem;
+            margin: 0.25rem;
+        }
+
+        #input:focus {
+            outline: none;
+        }
+
+        #form>button {
+            background: #333;
+            border: none;
+            padding: 0 1rem;
+            margin: 0.25rem;
+            border-radius: 3px;
+            outline: none;
+            color: #fff;
+        }
+
+        #messages {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        #messages>li {
+            padding: 0.5rem 1rem;
+        }
+
+        #messages>li:nth-child(odd) {
+            background: #efefef;
+        }
     </style>
-  </head>
-  <body>
+</head>
+
+<body>
+    <div>
+        <input type="text"
+            value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5Y2Y3ZjgwOWZkM2E4N2YxMzM1NGU0YyIsImlhdCI6MTc3NTIwNzMwMCwiZXhwIjoxNzc3Nzk5MzAwfQ.KM8FX6SX-2qntBUdbUMuHYyB5k3RCbXVsU_g3gX7Ly0"
+            id="jwt_txt">
+        <input type="button" onclick="getUser()" value="getuser">
+        <b id="user"></b>
+    </div>
+    <div>
+        <input type="text" value="69cf7f889fd3a87f13354e51" id="user_txt">
+        <input type="button" onclick="getMessage()" value="getMess">
+    </div>
     <ul id="messages"></ul>
     <form id="form" action="">
-      <input id="input" autocomplete="off" /><button>Send</button>
+        <input id="input" autocomplete="off" /><button>Send</button>
     </form>
-  </body>
-  <script src="/socket.io/socket.io.js"></script>
+</body>
+<script src="/socket.io/socket.io.js"></script>
 <script>
-  const socket = io();
+    var socket;
+    function getUser() {
+        socket = io();
+        let jwt = document.getElementById('jwt_txt').value;
+        socket.emit("welcome", {
+            auth: jwt,
+            device: navigator.userAgent
+        })
+        socket.on("username", data => {
+            document.getElementById('user').innerHTML = data
+        })
+        socket.on("newMess", data => {
+            getMessage()
+        })
+    }
+    async function getMessage() {
+        let jwt = document.getElementById('jwt_txt').value;
+        let user2 = document.getElementById('user_txt').value;
+        socket.emit('user02', user2)
+        let res = await fetch('http://localhost:3000/api/v1/messages/' + user2, {
+            headers: {
+                "authorization": "Bearer " + jwt
+            }
+        })
+        let messages = await res.json();
+        let ulMess = document.getElementById('messages');
+        ulMess.innerHTML = "";
+        for (const message of messages) {
+            ulMess.innerHTML += `<li>${message.from.username}->${message.to.username}:${message.messageContent.text}</li>`
+        }
+    }
+    document.getElementById('form').addEventListener('submit', async e => {
+        e.preventDefault()
+        let jwt = document.getElementById('jwt_txt').value;
+        let user2 = document.getElementById('user_txt').value;
+        let text = document.getElementById('input').value;
+        let res = await fetch('http://localhost:3000/api/v1/messages', {
+            method: "POST",
+            headers: {
+                "authorization": "Bearer " + jwt,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                to: user2,
+                text: text
+            })
+        })
+        if (res.ok) {
+            let message = await res.json();
+            document.getElementById('input').value = ""
+            socket.emit('newMess', message)
+            getMessage()
+        }
+    })
 </script>
+
 </html>
